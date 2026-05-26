@@ -6,6 +6,7 @@ import type {
   PluginApprovalRequest,
 } from "openclaw/plugin-sdk/approval-runtime";
 import type { ChannelApprovalCapability } from "openclaw/plugin-sdk/channel-contract";
+import { normalizeMessageChannel } from "openclaw/plugin-sdk/routing";
 import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { feishuApprovalAuth } from "./approval-auth.js";
 import { normalizeFeishuTarget } from "./targets.js";
@@ -37,6 +38,18 @@ const resolveFeishuOriginTarget = createChannelNativeOriginTargetResolver({
 
 export const feishuApprovalCapability: ChannelApprovalCapability = {
   ...feishuApprovalAuth,
+  delivery: {
+    // Plugin approvals delivered to feishu are handled by the native runtime
+    // (sends a card, clears buttons on resolve). Suppress the generic
+    // outbound forwarding fallback so the user does not see a duplicate card.
+    shouldSuppressForwardingFallback: ({ approvalKind, target }) => {
+      if (approvalKind !== "plugin") {
+        return false;
+      }
+      const channel = normalizeMessageChannel(target.channel) ?? target.channel;
+      return channel === "feishu";
+    },
+  },
   native: {
     describeDeliveryCapabilities: () => ({
       enabled: true,
