@@ -231,7 +231,7 @@ function mapFeishuButtonType(style: MessagePresentationButton["style"]) {
   return "default";
 }
 
-function buildFeishuPayloadButton(
+export function buildFeishuPayloadButton(
   button: MessagePresentationButton,
 ): Record<string, unknown> | undefined {
   // Feishu card schema 2.0 requires a `behaviors` array on the button element

@@ -41,7 +41,7 @@ import {
   resolveFeishuAccount,
   resolveFeishuRuntimeAccount,
 } from "./accounts.js";
-import { feishuApprovalAuth } from "./approval-auth.js";
+import { feishuApprovalCapability } from "./approval-native.js";
 import { FEISHU_CARD_INTERACTION_VERSION } from "./card-interaction.js";
 import type {
   ChannelMessageActionName,
@@ -774,7 +774,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount, FeishuProbeResul
             },
           }),
       },
-      approvalCapability: feishuApprovalAuth,
+      approvalCapability: feishuApprovalCapability,
       secrets: {
         secretTargetRegistryEntries,
         collectRuntimeConfigAssignments,
