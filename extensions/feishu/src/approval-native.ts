@@ -6,27 +6,21 @@ import type {
   PluginApprovalRequest,
 } from "openclaw/plugin-sdk/approval-runtime";
 import type { ChannelApprovalCapability } from "openclaw/plugin-sdk/channel-contract";
-import {
-  normalizeLowercaseStringOrEmpty,
-  normalizeOptionalString,
-} from "openclaw/plugin-sdk/string-coerce-runtime";
+import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { feishuApprovalAuth } from "./approval-auth.js";
 import { normalizeFeishuTarget } from "./targets.js";
 
 type ApprovalRequest = ExecApprovalRequest | PluginApprovalRequest;
 type FeishuOriginTarget = { to: string };
 
-function isFeishuApprovalRequest(request: ApprovalRequest): boolean {
-  const channel = normalizeLowercaseStringOrEmpty(request.request.turnSourceChannel);
-  return channel === "feishu" || channel === "lark";
-}
-
 function resolveTurnSourceFeishuTarget(request: ApprovalRequest): FeishuOriginTarget | null {
-  if (!isFeishuApprovalRequest(request)) {
+  // Channel/account match is enforced upstream via doesApprovalRequestMatchChannelAccount;
+  // here we only convert a turnSourceTo (if present) to a feishu chat id.
+  const rawTo = normalizeOptionalString(request.request.turnSourceTo) ?? "";
+  if (!rawTo) {
     return null;
   }
-  const rawTo = normalizeOptionalString(request.request.turnSourceTo) ?? "";
-  const normalized = rawTo ? normalizeFeishuTarget(rawTo) : null;
+  const normalized = normalizeFeishuTarget(rawTo);
   return normalized ? { to: normalized } : null;
 }
 
@@ -37,7 +31,6 @@ function resolveSessionFeishuTarget(sessionTarget: { to: string }): FeishuOrigin
 
 const resolveFeishuOriginTarget = createChannelNativeOriginTargetResolver({
   channel: "feishu",
-  shouldHandleRequest: ({ request }) => isFeishuApprovalRequest(request),
   resolveTurnSourceTarget: resolveTurnSourceFeishuTarget,
   resolveSessionTarget: resolveSessionFeishuTarget,
 });
@@ -56,8 +49,10 @@ export const feishuApprovalCapability: ChannelApprovalCapability = {
   },
   nativeRuntime: createLazyChannelApprovalNativeRuntimeAdapter({
     eventKinds: ["plugin"],
+    // Channel/account match is enforced upstream when the framework calls
+    // resolveOriginTarget; plugin approvals routed to feishu always reach here.
     isConfigured: () => true,
-    shouldHandle: ({ request }) => isFeishuApprovalRequest(request),
+    shouldHandle: () => true,
     load: async () =>
       (await import("./approval-handler.runtime.js"))
         .feishuApprovalNativeRuntime as unknown as ChannelApprovalNativeRuntimeAdapter,

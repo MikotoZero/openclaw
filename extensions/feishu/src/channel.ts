@@ -1,5 +1,6 @@
 import { describeAccountSnapshot } from "openclaw/plugin-sdk/account-helpers";
 import { formatAllowFromLowercase } from "openclaw/plugin-sdk/allow-from";
+import { CHANNEL_APPROVAL_NATIVE_RUNTIME_CONTEXT_CAPABILITY } from "openclaw/plugin-sdk/approval-handler-adapter-runtime";
 import {
   adaptScopedAccountAccessor,
   createHybridChannelConfigAdapter,
@@ -20,6 +21,7 @@ import {
   createAllowlistProviderGroupPolicyWarningCollector,
   projectConfigAccountIdWarningCollector,
 } from "openclaw/plugin-sdk/channel-policy";
+import { registerChannelRuntimeContext } from "openclaw/plugin-sdk/channel-runtime-context";
 import { getSessionBindingService } from "openclaw/plugin-sdk/conversation-runtime";
 import {
   createChannelDirectoryAdapter,
@@ -1343,6 +1345,16 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount, FeishuProbeResul
           ctx.log?.info(
             `starting feishu[${ctx.accountId}] (mode: ${account.config?.connectionMode ?? "websocket"})`,
           );
+          if (ctx.channelRuntime) {
+            registerChannelRuntimeContext({
+              channelRuntime: ctx.channelRuntime,
+              channelId: "feishu",
+              accountId: ctx.accountId,
+              capability: CHANNEL_APPROVAL_NATIVE_RUNTIME_CONTEXT_CAPABILITY,
+              context: { accountId: ctx.accountId },
+              abortSignal: ctx.abortSignal,
+            });
+          }
           return monitorFeishuProvider({
             config: ctx.cfg,
             runtime: ctx.runtime,
