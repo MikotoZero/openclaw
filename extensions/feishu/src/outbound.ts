@@ -234,33 +234,48 @@ function mapFeishuButtonType(style: MessagePresentationButton["style"]) {
 function buildFeishuPayloadButton(
   button: MessagePresentationButton,
 ): Record<string, unknown> | undefined {
-  const rendered: Record<string, unknown> = {
+  // Feishu card schema 2.0 requires a `behaviors` array on the button element
+  // (legacy direct `url` / `value` fields are rejected as 200861).
+  const behaviors: Record<string, unknown>[] = [];
+  if (button.url) {
+    const safeUrl = resolveSafeFeishuButtonUrl(button.url);
+    if (safeUrl) {
+      behaviors.push({
+        type: "open_url",
+        default_url: safeUrl,
+        pc_url: "",
+        ios_url: "",
+        android_url: "",
+      });
+    }
+  }
+  if (button.value) {
+    behaviors.push({
+      type: "callback",
+      value: createFeishuCardInteractionEnvelope({
+        k: "quick",
+        a: "feishu.payload.button",
+        q: button.value,
+      }),
+    });
+  }
+  if (behaviors.length === 0) {
+    return undefined;
+  }
+  return {
     tag: "button",
     text: {
       tag: "plain_text",
       content: button.label,
     },
     type: mapFeishuButtonType(button.style),
+    behaviors,
   };
-  if (button.url) {
-    const safeUrl = resolveSafeFeishuButtonUrl(button.url);
-    if (safeUrl) {
-      rendered.url = safeUrl;
-    }
-  }
-  if (button.value) {
-    rendered.value = createFeishuCardInteractionEnvelope({
-      k: "quick",
-      a: "feishu.payload.button",
-      q: button.value,
-    });
-  }
-  return rendered.url || rendered.value ? rendered : undefined;
 }
 
 function buildFeishuCardElementForBlock(
   block: MessagePresentationBlock,
-): Record<string, unknown> | undefined {
+): Record<string, unknown> | Record<string, unknown>[] | undefined {
   if (block.type === "text") {
     return { tag: "markdown", content: escapeFeishuCardMarkdownText(block.text) };
   }
@@ -274,16 +289,15 @@ function buildFeishuCardElementForBlock(
     return { tag: "hr" };
   }
   if (block.type === "buttons") {
-    const actions = block.buttons
+    // Schema 2.0 places each button as a top-level element; the caller
+    // flattens the returned array into the card body.
+    const buttonElements = block.buttons
       .map((button) => buildFeishuPayloadButton(button))
       .filter((button): button is Record<string, unknown> => Boolean(button));
-    if (actions.length === 0) {
+    if (buttonElements.length === 0) {
       return undefined;
     }
-    return {
-      tag: "action",
-      actions,
-    };
+    return buttonElements;
   }
   const labels = block.options.map((option) => `- ${option.label}`).join("\n");
   return {
@@ -322,7 +336,12 @@ function buildFeishuPayloadCard(params: {
   }
   for (const block of presentation?.blocks ?? []) {
     const element = buildFeishuCardElementForBlock(block);
-    if (element) {
+    if (!element) {
+      continue;
+    }
+    if (Array.isArray(element)) {
+      elements.push(...element);
+    } else {
       elements.push(element);
     }
   }
