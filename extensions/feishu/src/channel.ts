@@ -1401,6 +1401,15 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount, FeishuProbeResul
           },
         },
       },
+      // Runtime delegates must spread first; createRuntimeOutboundDelegates
+      // returns the full 5-key delegate shape with the unsupported entries
+      // set to undefined, which would silently overwrite the explicit
+      // renderPresentation/sendPayload definitions below if spread last.
+      ...createRuntimeOutboundDelegates({
+        getRuntime: loadFeishuChannelRuntime,
+        sendText: { resolve: (runtime) => runtime.feishuOutbound.sendText },
+        sendMedia: { resolve: (runtime) => runtime.feishuOutbound.sendMedia },
+      }),
       renderPresentation: async (ctx) => {
         const runtime = await loadFeishuChannelRuntime();
         const renderPresentation = runtime.feishuOutbound.renderPresentation;
@@ -1414,10 +1423,5 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount, FeishuProbeResul
         }
         return await sendPayload(ctx);
       },
-      ...createRuntimeOutboundDelegates({
-        getRuntime: loadFeishuChannelRuntime,
-        sendText: { resolve: (runtime) => runtime.feishuOutbound.sendText },
-        sendMedia: { resolve: (runtime) => runtime.feishuOutbound.sendMedia },
-      }),
     },
   });
