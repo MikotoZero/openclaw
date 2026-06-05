@@ -34,10 +34,18 @@ type FeishuApprovalPendingEntry = {
   chatId: string;
   messageId: string;
   pendingCard: Record<string, unknown>;
+  /** Stashed by buildResolvedResult so clearPendingActions (which only gets the
+   *  phase) can render a decision-specific note. */
+  decision?: string;
 };
 
-const APPROVAL_RESOLVED_NOTE = "✅ Approval resolved.";
-const APPROVAL_EXPIRED_NOTE = "⌛ Approval expired.";
+const APPROVAL_APPROVED_NOTE = "✅ 已批准";
+const APPROVAL_DENIED_NOTE = "❌ 已拒绝";
+const APPROVAL_RESOLVED_NOTE = "✅ 已处理";
+const APPROVAL_EXPIRED_NOTE = "⌛ 已超时";
+/** element_id tag on the button row's column_set so resolve can strip exactly
+ *  the controls (by id) without guessing — and never touch content layout. */
+const APPROVAL_ACTIONS_ELEMENT_ID = "codepilot-approval-actions";
 
 function buildPendingText(params: {
   request: ApprovalRequest;
@@ -97,11 +105,25 @@ function buildApprovalCard(params: {
 }): Record<string, unknown> {
   const elements: Record<string, unknown>[] = [{ tag: "markdown", content: params.text }];
   const buttons = params.buttons ?? buildPresentationButtons(params.view);
-  for (const button of buttons) {
-    const element = buildFeishuPayloadButton(button);
-    if (element) {
-      elements.push(element);
-    }
+  const buttonElements = buttons
+    .map((button) => buildFeishuPayloadButton(button))
+    .filter((element): element is Record<string, unknown> => element !== undefined);
+  if (buttonElements.length > 0) {
+    // Card schema 2.0 dropped `tag: action` (rejected as 200861). Lay buttons
+    // out horizontally with a column_set — one button per equal-weight column.
+    elements.push({
+      tag: "column_set",
+      element_id: APPROVAL_ACTIONS_ELEMENT_ID,
+      flex_mode: "none",
+      horizontal_spacing: "8px",
+      columns: buttonElements.map((button) => ({
+        // width:auto → each column hugs its button; columns pack left instead of
+        // stretching to equal halves (which pushed Deny to the far right).
+        tag: "column",
+        width: "auto",
+        elements: [button],
+      })),
+    });
   }
   const template =
     params.view.approvalKind === "plugin"
@@ -122,15 +144,22 @@ function buildApprovalCard(params: {
   };
 }
 
+function isApprovalControl(element: unknown): boolean {
+  if (!element || typeof element !== "object") {
+    return false;
+  }
+  const entry = element as { tag?: unknown; element_id?: unknown };
+  // The button row, tagged by element_id (precise — never a content element);
+  // plus any stray top-level button as a defensive fallback.
+  return entry.element_id === APPROVAL_ACTIONS_ELEMENT_ID || entry.tag === "button";
+}
+
 function stripCardButtons(card: Record<string, unknown>, note: string): Record<string, unknown> {
   const body = (card.body as { elements?: unknown[] } | undefined) ?? {};
   const elements = Array.isArray(body.elements) ? body.elements : [];
-  const filtered = elements.filter((element) => {
-    if (!element || typeof element !== "object") {
-      return true;
-    }
-    return (element as { tag?: unknown }).tag !== "button";
-  });
+  // Drop only the decision controls (the element_id-tagged button row); all
+  // content elements — including any non-button column_set layout — are kept.
+  const filtered = elements.filter((element) => !isApprovalControl(element));
   filtered.push({ tag: "markdown", content: `<font color='grey'>${note}</font>` });
   return {
     ...card,
@@ -175,7 +204,16 @@ export const feishuApprovalNativeRuntime = createChannelApprovalNativeRuntimeAda
         card: buildApprovalCard({ text, view }),
       };
     },
-    buildResolvedResult: () => ({ kind: "clear-actions" }),
+    buildResolvedResult: ({ resolved, entry }) => {
+      // Stash the decision on the shared entry so clearPendingActions (only gets
+      // phase) can render approve vs deny. Same wrapped.entry instance is passed
+      // to clearPendingActions next in the finalize loop.
+      const decision = (resolved as { decision?: string } | undefined)?.decision;
+      if (decision) {
+        entry.decision = decision;
+      }
+      return { kind: "clear-actions" };
+    },
     buildExpiredResult: () => ({ kind: "clear-actions" }),
   },
   transport: {
@@ -199,7 +237,14 @@ export const feishuApprovalNativeRuntime = createChannelApprovalNativeRuntimeAda
   },
   interactions: {
     clearPendingActions: async ({ cfg, accountId, entry, phase }) => {
-      const note = phase === "expired" ? APPROVAL_EXPIRED_NOTE : APPROVAL_RESOLVED_NOTE;
+      const note =
+        phase === "expired"
+          ? APPROVAL_EXPIRED_NOTE
+          : entry.decision === "deny"
+            ? APPROVAL_DENIED_NOTE
+            : entry.decision
+              ? APPROVAL_APPROVED_NOTE
+              : APPROVAL_RESOLVED_NOTE;
       const clearedCard = stripCardButtons(entry.pendingCard, note);
       await updateCardFeishu({
         cfg,
