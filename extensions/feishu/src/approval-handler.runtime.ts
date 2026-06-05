@@ -9,7 +9,10 @@ import type {
   ExecApprovalRequest,
   PluginApprovalRequest,
 } from "openclaw/plugin-sdk/approval-runtime";
-import type { MessagePresentationButton } from "openclaw/plugin-sdk/interactive-runtime";
+import type {
+  MessagePresentation,
+  MessagePresentationButton,
+} from "openclaw/plugin-sdk/interactive-runtime";
 import { createSubsystemLogger } from "openclaw/plugin-sdk/runtime-env";
 import { buildFeishuPayloadButton } from "./outbound.js";
 import { sendCardFeishu, updateCardFeishu } from "./send.js";
@@ -43,11 +46,11 @@ function buildPendingText(params: {
   view: PendingApprovalView;
 }): string {
   if (params.approvalKind === "plugin") {
-    const payload = buildPluginApprovalPendingReplyPayload({
-      request: params.request as PluginApprovalRequest,
-      nowMs: params.nowMs,
-    });
-    return payload.text ?? params.view.title;
+    // Use the plugin-supplied description as the card body — the buttons (added
+    // in buildPendingPayload) replace the verbose "Title/Tool/Plugin/Agent/ID/
+    // Reply with /approve" text frame. Title already shows in the card header.
+    const description = (params.request as PluginApprovalRequest).request.description?.trim();
+    return description && description.length > 0 ? description : params.view.title;
   }
   // Exec approval text is composed from the view's commandText/warning when
   // surfaced through the native runtime; fall back to the view title so the
@@ -70,8 +73,9 @@ function buildPendingText(params: {
   return lines.join("\n");
 }
 
-function buildPresentationButtons(view: PendingApprovalView): MessagePresentationButton[] {
-  const presentation = buildApprovalPresentationFromActionDescriptors(view.actions);
+function buttonsFromPresentation(
+  presentation: MessagePresentation | undefined,
+): MessagePresentationButton[] {
   if (!presentation) {
     return [];
   }
@@ -79,12 +83,21 @@ function buildPresentationButtons(view: PendingApprovalView): MessagePresentatio
   return block?.type === "buttons" ? block.buttons : [];
 }
 
+function buildPresentationButtons(view: PendingApprovalView): MessagePresentationButton[] {
+  return buttonsFromPresentation(buildApprovalPresentationFromActionDescriptors(view.actions));
+}
+
 function buildApprovalCard(params: {
   text: string;
   view: PendingApprovalView;
+  /** Explicit buttons (plugin approvals pass the reply payload's presentation
+   *  buttons here, since their view.actions is empty); falls back to the view's
+   *  action descriptors (exec approvals). */
+  buttons?: MessagePresentationButton[];
 }): Record<string, unknown> {
   const elements: Record<string, unknown>[] = [{ tag: "markdown", content: params.text }];
-  for (const button of buildPresentationButtons(params.view)) {
+  const buttons = params.buttons ?? buildPresentationButtons(params.view);
+  for (const button of buttons) {
     const element = buildFeishuPayloadButton(button);
     if (element) {
       elements.push(element);
@@ -139,6 +152,24 @@ export const feishuApprovalNativeRuntime = createChannelApprovalNativeRuntimeAda
   presentation: {
     buildPendingPayload: ({ request, approvalKind, nowMs, view }) => {
       const text = buildPendingText({ request, approvalKind, nowMs, view });
+      if (approvalKind === "plugin") {
+        // Plugin approvals: view.actions is empty, but the reply payload carries
+        // a presentation with the decision buttons (value = /approve <id>
+        // <decision>). Render those so the card has Approve/Deny buttons instead
+        // of a "Reply with /approve" text instruction. Keep a grey id footer so
+        // manual /approve still works if a button ever fails.
+        const pluginRequest = request as PluginApprovalRequest;
+        const payload = buildPluginApprovalPendingReplyPayload({
+          request: pluginRequest,
+          nowMs,
+        });
+        const buttons = buttonsFromPresentation(payload.presentation);
+        const cardText = `${text}\n\n<font color='grey'>id: ${pluginRequest.id}</font>`;
+        return {
+          text,
+          card: buildApprovalCard({ text: cardText, view, buttons }),
+        };
+      }
       return {
         text,
         card: buildApprovalCard({ text, view }),
