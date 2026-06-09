@@ -119,7 +119,14 @@ export async function resolveFeishuSenderName(params: {
       log(`feishu: permission error resolving sender name: code=${permErr.code}`);
       return { permissionError: permErr };
     }
-    log(`feishu: failed to resolve sender name for ${normalizedSenderId}: ${String(err)}`);
+    // Surface the full Feishu error body (code/msg) — axios status alone (400)
+    // can't tell a missing contact scope from an out-of-visibility open_id.
+    const errBody = (err as { response?: { data?: unknown } })?.response?.data;
+    log(
+      `feishu: failed to resolve sender name for ${normalizedSenderId} (idType=${resolveSenderLookupIdType(
+        normalizedSenderId,
+      )}): ${String(err)}${errBody ? ` body=${JSON.stringify(errBody)}` : ""}`,
+    );
     return {};
   }
 }

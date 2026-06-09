@@ -91,6 +91,26 @@ function buttonsFromPresentation(
   return block?.type === "buttons" ? block.buttons : [];
 }
 
+/** Decision token (tail of the `/approve <id> <decision>` callback value) →
+ *  zh-CN button label. The plugin SDK emits English labels ("Allow Once" /
+ *  "Deny"); the codepilot approval card shows Chinese. Unknown tokens keep the
+ *  original label so the card never renders a blank button. */
+const APPROVAL_BUTTON_LABELS_ZH: Record<string, string> = {
+  "allow-once": "同意",
+  "allow-always": "始终允许",
+  deny: "拒绝",
+};
+
+function localizeApprovalButtons(
+  buttons: MessagePresentationButton[],
+): MessagePresentationButton[] {
+  return buttons.map((button) => {
+    const decision = button.value?.trim().split(/\s+/).pop();
+    const label = decision ? APPROVAL_BUTTON_LABELS_ZH[decision] : undefined;
+    return label ? { ...button, label } : button;
+  });
+}
+
 function buildPresentationButtons(view: PendingApprovalView): MessagePresentationButton[] {
   return buttonsFromPresentation(buildApprovalPresentationFromActionDescriptors(view.actions));
 }
@@ -192,7 +212,7 @@ export const feishuApprovalNativeRuntime = createChannelApprovalNativeRuntimeAda
           request: pluginRequest,
           nowMs,
         });
-        const buttons = buttonsFromPresentation(payload.presentation);
+        const buttons = localizeApprovalButtons(buttonsFromPresentation(payload.presentation));
         const cardText = `${text}\n\n<font color='grey'>id: ${pluginRequest.id}</font>`;
         return {
           text,
