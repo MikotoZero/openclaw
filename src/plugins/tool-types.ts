@@ -45,6 +45,8 @@ export type OpenClawPluginToolContext = {
   deliveryContext?: DeliveryContext;
   /** Trusted sender id from inbound context (runtime-provided, not tool args). */
   requesterSenderId?: string;
+  /** Trusted sender display name resolved at inbound (runtime-provided, not tool args). */
+  requesterSenderName?: string;
   sandboxed?: boolean;
 };
 
