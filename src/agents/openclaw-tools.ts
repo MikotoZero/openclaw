@@ -144,6 +144,11 @@ export function createOpenClawTools(
     recordToolPrepStage?: (name: string) => void;
     /** Trusted sender id from inbound context (not tool args). */
     requesterSenderId?: string | null;
+    /** Trusted sender display name from inbound context. Without this field the
+     *  main-agent path (createOpenClawTools → resolveOpenClawPluginToolsForOptions,
+     *  which forwards these options verbatim) drops the name and plugin tools see
+     *  requesterSenderName=undefined even though the inbound turn resolved it. */
+    requesterSenderName?: string | null;
     /** Auth profiles already loaded for this run; used for prompt-time tool availability. */
     authProfileStore?: AuthProfileStore;
     /** Ephemeral session UUID — regenerated on /new and /reset. */
