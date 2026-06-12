@@ -289,15 +289,25 @@ function buildFeishuCardElementForBlock(
     return { tag: "hr" };
   }
   if (block.type === "buttons") {
-    // Schema 2.0 places each button as a top-level element; the caller
-    // flattens the returned array into the card body.
     const buttonElements = block.buttons
       .map((button) => buildFeishuPayloadButton(button))
       .filter((button): button is Record<string, unknown> => Boolean(button));
     if (buttonElements.length === 0) {
       return undefined;
     }
-    return buttonElements;
+    // Schema 2.0 dropped `tag: action` (rejected as 200861). Lay buttons out
+    // horizontally with a column_set — one auto-width column per button so
+    // they pack left instead of stacking vertically as top-level elements.
+    return {
+      tag: "column_set",
+      flex_mode: "none",
+      horizontal_spacing: "8px",
+      columns: buttonElements.map((button) => ({
+        tag: "column",
+        width: "auto",
+        elements: [button],
+      })),
+    };
   }
   const labels = block.options.map((option) => `- ${option.label}`).join("\n");
   return {
