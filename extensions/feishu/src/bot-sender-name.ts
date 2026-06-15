@@ -76,6 +76,8 @@ function resolveSenderLookupIdType(senderId: string): "open_id" | "user_id" | "u
 export async function resolveFeishuSenderName(params: {
   account: ResolvedFeishuAccount;
   senderId: string;
+  chatId?: string;
+  isGroup?: boolean;
   log: FeishuLogger;
 }): Promise<SenderNameResult> {
   const { account, senderId, log } = params;
@@ -119,6 +121,19 @@ export async function resolveFeishuSenderName(params: {
       log(`feishu: permission error resolving sender name: code=${permErr.code}`);
       return { permissionError: permErr };
     }
+    const groupMemberName = await resolveSenderNameFromChatMembers({
+      account,
+      chatId: params.isGroup ? params.chatId : undefined,
+      senderId: normalizedSenderId,
+      log,
+    });
+    if (groupMemberName) {
+      senderNameCache.set(normalizedSenderId, {
+        name: groupMemberName,
+        expireAt: now + SENDER_NAME_TTL_MS,
+      });
+      return { name: groupMemberName };
+    }
     // Surface the full Feishu error body (code/msg) — axios status alone (400)
     // can't tell a missing contact scope from an out-of-visibility open_id.
     const errBody = (err as { response?: { data?: unknown } })?.response?.data;
@@ -129,4 +144,50 @@ export async function resolveFeishuSenderName(params: {
     );
     return {};
   }
+}
+
+async function resolveSenderNameFromChatMembers(params: {
+  account: ResolvedFeishuAccount;
+  chatId?: string;
+  senderId: string;
+  log: FeishuLogger;
+}): Promise<string | undefined> {
+  const chatId = params.chatId?.trim();
+  if (!chatId) {
+    return undefined;
+  }
+
+  try {
+    const client = createFeishuClient(params.account);
+    const memberIdType = resolveSenderLookupIdType(params.senderId);
+    let pageToken: string | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const res = await client.im.chatMembers.get({
+        path: { chat_id: chatId },
+        params: {
+          page_size: 100,
+          page_token: pageToken,
+          member_id_type: memberIdType,
+        },
+      });
+      if (res.code !== 0) {
+        params.log(`feishu: failed to resolve sender name from chat members: ${res.msg}`);
+        return undefined;
+      }
+      const match = res.data?.items?.find((member) => member.member_id === params.senderId);
+      const name = match?.name?.trim();
+      if (name) {
+        return name;
+      }
+      const nextPageToken = res.data?.page_token?.trim();
+      if (!res.data?.has_more || !nextPageToken) {
+        return undefined;
+      }
+      pageToken = nextPageToken;
+    }
+    params.log(`feishu: sender name chat member lookup exhausted for chat ${chatId}`);
+  } catch (err) {
+    params.log(`feishu: failed to resolve sender name from chat members: ${String(err)}`);
+  }
+  return undefined;
 }

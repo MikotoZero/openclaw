@@ -218,6 +218,26 @@ describe("Feishu Card Action Handler", () => {
     expect(message.content).toBe('{"text":"/help"}');
   });
 
+  it("marks group quick actions as bot-addressed synthetic messages", async () => {
+    const event = createStructuredQuickActionEvent({
+      token: "tok3-mention",
+      action: "feishu.payload.button",
+      command: "/approve plugin:req allow-once",
+    });
+
+    await handleFeishuCardAction({ cfg, event, runtime, botOpenId: "bot-open-id" });
+
+    const message = handleMessage();
+    expect(message.chat_type).toBe("group");
+    expect(message.mentions).toEqual([
+      {
+        key: "@_bot_1",
+        id: { open_id: "bot-open-id" },
+        name: "bot",
+      },
+    ]);
+  });
+
   it("opens an approval card for metadata actions", async () => {
     const event: FeishuCardActionEvent = {
       operator: { open_id: "u123", user_id: "uid1", union_id: "un1" },

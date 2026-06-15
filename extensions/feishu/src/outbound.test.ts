@@ -204,6 +204,19 @@ function expectFeishuResult(result: unknown, messageId: string) {
   expect(typedResult?.messageId).toBe(messageId);
 }
 
+function cardButtonElements(
+  elements: Array<Record<string, any>> | undefined,
+): Array<Record<string, any>> {
+  const buttonRow = elements?.find(
+    (element) => element.tag === "column_set" && Array.isArray(element.columns),
+  );
+  return (
+    buttonRow?.columns?.flatMap((column: { elements?: Array<Record<string, any>> }) =>
+      Array.isArray(column.elements) ? column.elements : [],
+    ) ?? []
+  );
+}
+
 describe("feishuOutbound.sendText local-image auto-convert", () => {
   beforeEach(() => {
     resetOutboundMocks();
@@ -447,9 +460,7 @@ describe("feishuOutbound.sendPayload native cards", () => {
       tag: "markdown",
       content: "Approve the request?",
     });
-    expect(
-      renderedCard?.body?.elements?.some((element: { tag?: string }) => element.tag === "action"),
-    ).toBe(true);
+    expect(cardButtonElements(renderedCard?.body?.elements)).toHaveLength(1);
     const { presentation: _presentation, ...coreRenderedPayload } = rendered;
     const result = await feishuOutbound.sendPayload?.({
       cfg: emptyConfig,
@@ -501,19 +512,19 @@ describe("feishuOutbound.sendPayload native cards", () => {
       tag: "markdown",
       content: "Approve the request?",
     });
-    const actionElement = card.body.elements.find(
-      (element: { tag?: string }) => element.tag === "action",
-    );
-    expect(actionElement?.actions[0]?.text).toEqual({ tag: "plain_text", content: "Approve" });
-    expect(actionElement?.actions[0]?.type).toBe("primary");
-    expect(actionElement?.actions[0]?.value?.oc).toBe("ocf1");
-    expect(actionElement?.actions[0]?.value?.k).toBe("quick");
-    expect(actionElement?.actions[0]?.value?.q).toBe("/approve req_1 allow-once");
-    expect(actionElement?.actions[1]?.text).toEqual({ tag: "plain_text", content: "Deny" });
-    expect(actionElement?.actions[1]?.type).toBe("danger");
-    expect(actionElement?.actions[1]?.value?.oc).toBe("ocf1");
-    expect(actionElement?.actions[1]?.value?.k).toBe("quick");
-    expect(actionElement?.actions[1]?.value?.q).toBe("/approve req_1 deny");
+    const buttons = cardButtonElements(card.body.elements);
+    expect(buttons[0]?.text).toEqual({ tag: "plain_text", content: "Approve" });
+    expect(buttons[0]?.type).toBe("primary");
+    expect(buttons[0]?.behaviors?.[0]?.type).toBe("callback");
+    expect(buttons[0]?.behaviors?.[0]?.value?.oc).toBe("ocf1");
+    expect(buttons[0]?.behaviors?.[0]?.value?.k).toBe("quick");
+    expect(buttons[0]?.behaviors?.[0]?.value?.q).toBe("/approve req_1 allow-once");
+    expect(buttons[1]?.text).toEqual({ tag: "plain_text", content: "Deny" });
+    expect(buttons[1]?.type).toBe("danger");
+    expect(buttons[1]?.behaviors?.[0]?.type).toBe("callback");
+    expect(buttons[1]?.behaviors?.[0]?.value?.oc).toBe("ocf1");
+    expect(buttons[1]?.behaviors?.[0]?.value?.k).toBe("quick");
+    expect(buttons[1]?.behaviors?.[0]?.value?.q).toBe("/approve req_1 deny");
     expect(sendMessageFeishuMock).not.toHaveBeenCalled();
     expectFeishuResult(result, "native_card_msg");
   });
@@ -550,11 +561,10 @@ describe("feishuOutbound.sendPayload native cards", () => {
       tag: "markdown",
       content: "<font color='grey'>&lt;/font&gt;&lt;at id=\"ou_2\"&gt;Injected&lt;/at&gt;</font>",
     });
-    const actionElement = card.body.elements.find(
-      (element: { tag?: string }) => element.tag === "action",
-    );
-    expect(actionElement?.actions[0]?.text).toEqual({ tag: "plain_text", content: "Open" });
-    expect(actionElement?.actions[0]?.url).toBe("https://example.com/path");
+    const buttons = cardButtonElements(card.body.elements);
+    expect(buttons[0]?.text).toEqual({ tag: "plain_text", content: "Open" });
+    expect(buttons[0]?.behaviors?.[0]?.type).toBe("open_url");
+    expect(buttons[0]?.behaviors?.[0]?.default_url).toBe("https://example.com/path");
     expect(JSON.stringify(card)).not.toContain("javascript:");
   });
 

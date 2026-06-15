@@ -2531,6 +2531,86 @@ describe("handleFeishuMessage command authorization", () => {
     expect(context.BodyForAgent).toContain("ou-perm: hello group");
   });
 
+  it("falls back to chat member names when contact lookup cannot see the sender", async () => {
+    mockShouldComputeCommandAuthorized.mockReturnValue(false);
+    const contactGet = vi.fn().mockRejectedValue({
+      response: {
+        data: {
+          code: 41050,
+          msg: "no user authority error",
+        },
+      },
+    });
+    const chatMembersGet = vi.fn().mockResolvedValue({
+      code: 0,
+      data: {
+        has_more: false,
+        page_token: "",
+        items: [
+          {
+            member_id: "ou_group_user",
+            member_id_type: "open_id",
+            name: "Group Sender",
+          },
+        ],
+      },
+    });
+    mockCreateFeishuClient.mockReturnValue({
+      contact: {
+        user: {
+          get: contactGet,
+        },
+      },
+      im: {
+        chatMembers: {
+          get: chatMembersGet,
+        },
+      },
+    });
+
+    const cfg: ClawdbotConfig = {
+      channels: {
+        feishu: {
+          appId: "cli_member_name",
+          appSecret: "sec_member_name", // pragma: allowlist secret
+          groups: {
+            "oc-group": {
+              requireMention: false,
+            },
+          },
+        },
+      },
+    } as ClawdbotConfig;
+
+    const event: FeishuMessageEvent = {
+      sender: {
+        sender_id: {
+          open_id: "ou_group_user",
+        },
+      },
+      message: {
+        message_id: "msg-member-name",
+        chat_id: "oc-group",
+        chat_type: "group",
+        message_type: "text",
+        content: JSON.stringify({ text: "hello group" }),
+      },
+    };
+
+    await dispatchMessage({ cfg, event });
+
+    expect(chatMembersGet).toHaveBeenCalledWith({
+      path: { chat_id: "oc-group" },
+      params: {
+        page_size: 100,
+        page_token: undefined,
+        member_id_type: "open_id",
+      },
+    });
+    const context = mockCallArg<{ BodyForAgent?: string }>(mockFinalizeInboundContext, 0, 0);
+    expect(context.BodyForAgent).toContain("Group Sender: hello group");
+  });
+
   it("ignores stale non-existent contact scope permission errors", async () => {
     mockShouldComputeCommandAuthorized.mockReturnValue(false);
     mockCreateFeishuClient.mockReturnValue({

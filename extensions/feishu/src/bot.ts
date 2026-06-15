@@ -507,6 +507,8 @@ export async function handleFeishuMessage(params: {
     const senderResult = await resolveFeishuSenderName({
       account,
       senderId: ctx.senderOpenId,
+      chatId: isGroup ? ctx.chatId : undefined,
+      isGroup,
       log,
     });
     if (senderResult.name) {
